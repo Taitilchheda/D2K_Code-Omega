@@ -34,7 +34,7 @@ def get_user_info():
     return user_info
 
 def get_event_info():
-    filename = 'cache_event_info_complete.pkl'
+    filename = 'cache_event_info.pkl'
     event_info = load_cached_data(filename)
     if event_info is None:
         event_info = process_events()
@@ -348,7 +348,7 @@ def write_submission(submission_name, user_events_dict):
 # --- Data splitting and evaluation functions ---
 
 def get_crossval_data():
-    train = pd.read_csv("data/event_recommendation/train.csv")
+    train = pd.read_csv("models/data/train.csv")
     train_dict = {}
     duplicates = set()
     for _, row in train.iterrows():
@@ -400,13 +400,13 @@ def get_crossval_data():
     return splits
 
 def get_test_data():
-    solutions_df = pd.read_csv("data/event_recommendation/public_leaderboard_solution.csv")
+    solutions_df = pd.read_csv("models/data/public_leaderboard_solution.csv")
     solutions_dict = {}
     for _, row in solutions_df.iterrows():
         uid = int(row['User'])
         eid = int(row['Events'])
         solutions_dict[uid] = [eid]
-    test = pd.read_csv("data/event_recommendation/test.csv")
+    test = pd.read_csv("models/data/test.csv")
     test_dict = {}
     for _, row in test.iterrows():
         uid = row['user']
@@ -436,7 +436,7 @@ def get_test_data():
     return test_data
 
 def get_final_data():
-    final_df = pd.read_csv("data/event_recommendation/event_popularity_benchmark_private_test_only.csv")
+    final_df = pd.read_csv("models/data/event_popularity_benchmark_private_test_only.csv")
     final_dict = {}
     for _, row in final_df.iterrows():
         uid = int(row['User'])
@@ -510,7 +510,7 @@ def run_crossval():
     print(f"[CROSSVAL] Average APK score across splits: {average_apk:.4f}")
     
 def get_test_solutions():
-    solutions_df = pd.read_csv("data/event_recommendation/public_leaderboard_solution.csv")
+    solutions_df = pd.read_csv("models/data/public_leaderboard_solution.csv")
     solutions_dict = {}
     for _, row in solutions_df.iterrows():
         uid = int(row['User'])

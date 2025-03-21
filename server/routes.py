@@ -1,13 +1,25 @@
+
 from flask import Flask, request, jsonify, g
 import pickle
 import os
-from bson.objectid import ObjectId
+
+MODEL_FILENAME = "trained_model.pkl"
+if os.path.exists(MODEL_FILENAME):
+    with open(MODEL_FILENAME, "rb") as f:
+        ml_model = pickle.load(f)
+    print(f"Loaded ml_model from {MODEL_FILENAME}")
+else:
+    ml_model = None
+    print("Trained ml_model not found.")
+    
+import random
+import string
 import numpy as np
 from pymongo import MongoClient
 from urllib.parse import quote_plus
 from dotenv import load_dotenv, find_dotenv
 from dateutil.parser import parse
-from utils import Utils
+from utils import Utils 
 
 # -------------------------------
 # MongoDB Connection Setup
@@ -27,16 +39,9 @@ friends_db = db.friends
 # -------------------------------
 # Import Recommendation Logic
 # -------------------------------
-from data.event_recommendation.recommendation import process_events_for_user
+from models.recommendation import process_events_for_user
 
-MODEL_FILENAME = "trained_model.pkl"
-if os.path.exists(MODEL_FILENAME):
-    with open(MODEL_FILENAME, "rb") as f:
-        model = pickle.load(f)
-    print(f"Loaded model from {MODEL_FILENAME}")
-else:
-    model = None
-    print("Trained model not found.")
+
 
 # -------------------------------
 # Helper: Load full data from MongoDB
@@ -97,7 +102,6 @@ def register():
     
     Expected JSON input:
     {
-        "user_id": 1,                // Unique identifier for the user
         "username": "user1",         // Optional, for login purposes
         "password": "pass1",         // In production, ensure secure storage (hashing)
         "birthyear": 1985,
@@ -109,15 +113,28 @@ def register():
         }
     }
     
+    If 'user_id' is not provided, a random unique user_id will be generated.
+    
     Response:
     - On success: { "status": "success", "user": <user document> }
     - On failure: { "status": "fail", "message": "Error message" }
     """
     data = request.get_json()
-    required_fields = ["user_id", "birthyear", "gender"]
+
+    # Ensure required fields are provided
+    required_fields = ["birthyear", "gender"]
     for field in required_fields:
         if field not in data:
             return jsonify({"status": "fail", "message": f"Missing field: {field}"}), 400
+
+    # Check if username already exists
+    if "username" in data:
+        existing_user = user_info_db.find_one({"username": data["username"]})
+        if existing_user:
+            return jsonify({"status": "fail", "message": "Username already exists"}), 400
+
+    if "user_id" not in data or not data["user_id"]:
+        data["user_id"] = Utils.generate_random_user_id(user_info_db)
 
     try:
         user_info_db.insert_one(data)
@@ -136,7 +153,6 @@ def register_event():
     
     Expected JSON input:
     {
-        "event_id": "E123",     // Unique identifier for the event
         "lat": 37.7749,
         "lng": -122.4194,
         "words": ["music", "festival", "live"],
@@ -144,13 +160,17 @@ def register_event():
         // ... any additional event information
     }
     
+    If 'event_id' is not provided, a random unique event_id will be generated.
+    
     Response:
     - On success: { "status": "success", "event": <event document> }
     - On failure: { "status": "fail", "message": "Error message" }
     """
     data = request.get_json()
-    if "event_id" not in data:
-        return jsonify({"status": "fail", "message": "Missing event_id"}), 400
+
+    # Generate a random event_id if not provided
+    if "event_id" not in data or not data["event_id"]:
+        data["event_id"] = Utils.generate_random_event_id(event_info_db)
 
     try:
         event_info_db.insert_one(data)
@@ -175,8 +195,8 @@ def update_friends():
     
     Expected JSON input:
     {
-        "user": 1,              // user_id
-        "friends": [2, 3, 4]      // list of friend user_ids
+        "user": <user_id>,              // user_id
+        "friends": [user_id1, user_id2]   // list of friend user_ids
     }
     
     Response:
@@ -206,9 +226,9 @@ def interaction():
     
     Expected JSON input:
     {
-        "user": 1,
-        "event": "E123",
-        "response": "yes",   // Options can be: "yes", "maybe", "no", "invited"
+        "user": <user_id>,
+        "event": <event_id>,
+        "response": "yes",   // Options: "yes", "maybe", "no", "invited"
         "timestamp": 1370001234   // Unix timestamp of interaction
     }
     
@@ -240,26 +260,23 @@ def interaction():
 @app.route('/recommendations', methods=['POST'])
 def recommendations():
     """
-    Returns event recommendations for a given user using the pre-trained model.
+    Returns event recommendations for a given user using the pre-trained ml_model.
     
     Expected JSON input:
     {
-        "user_id": 1
+        "user_id": <user_id>
     }
     
     Process:
-    - Loads the full data from MongoDB (users, events, attendance, friends) and updates the global variables.
-    - Builds a candidate event dictionary for the user.
-      Here, for each event in the event_info collection, we assume a default tuple (invited_flag, timestamp)
-      for simplicity.
-    - Calls the existing recommendation logic (process_events_for_user) which computes feature vectors for each event.
-    - Replaces None values in the feature vector with 0.
-    - Uses the pre-trained model to predict scores for each event and sorts them in descending order.
+    - Uses data loaded into g (user_info, event_info, attendance, friends) to build a candidate event dictionary.
+    - Calls the recommendation logic (process_events_for_user) to compute feature vectors.
+    - Replaces None values in feature vectors with 0.
+    - Uses the pre-trained ml_model to predict scores for each event and sorts them in descending order.
     
     Response:
     {
         "status": "success",
-        "user_id": 1,
+        "user_id": <user_id>,
         "recommendations": [list of event IDs sorted by predicted score]
     }
     """
@@ -271,9 +288,8 @@ def recommendations():
     if user_id not in g.user_info:
         return jsonify({"status": "fail", "message": "User not found"}), 404
 
-    e_dict = {}
-    for eid in g.event_info:
-        e_dict[eid] = (0, 0)
+    # Build candidate event dictionary with default (invited_flag, timestamp) = (0, 0)
+    e_dict = {eid: (0, 0) for eid in g.event_info}
 
     features_dict = process_events_for_user(user_id, e_dict)
 
@@ -284,10 +300,10 @@ def recommendations():
         X.append(features)
     X = np.array(X)
 
-    if model is None:
+    if ml_model is None:
         return jsonify({"status": "fail", "message": "Model not loaded"}), 500
 
-    predictions = model.test(X)
+    predictions = ml_model.test(X)
     event_scores = list(zip(event_ids, predictions))
     event_scores.sort(key=lambda x: -x[1])
     recommended_events = [eid for eid, score in event_scores]
