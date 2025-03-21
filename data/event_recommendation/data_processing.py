@@ -5,7 +5,7 @@ from dateutil.parser import parse
 from collections import defaultdict
 
 def process_users():
-    users_df = pd.read_csv("data/event-recommendation/users.csv")
+    users_df = pd.read_csv("data/event_recommendation/users.csv")
     user_info = {}
     for _, row in users_df.iterrows():
         uid = int(row['user_id'])
@@ -19,7 +19,7 @@ def process_users():
     return user_info
 
 def process_events():
-    events_df = pd.read_csv("data/event-recommendation/events.csv")
+    events_df = pd.read_csv("data/event_recommendation/events.csv")
     event_info = {}
     for _, row in events_df.iterrows():
         eid = row['event_id']
@@ -37,7 +37,7 @@ def process_events():
 
 
 def process_friends():
-    friends_df = pd.read_csv("data/event-recommendation/user_friends.csv")
+    friends_df = pd.read_csv("data/event_recommendation/user_friends.csv")
     friends = {}
     for _, row in friends_df.iterrows():
         uid = row['user']
@@ -56,7 +56,7 @@ def update_attendance(uid, eid, att_type, attendance_dict):
 def process_attendance():
     attendance_dict = {}
     # Process event_attendees.csv
-    event_attendees_df = pd.read_csv("data/event-recommendation/event_attendees.csv")
+    event_attendees_df = pd.read_csv("data/event_recommendation/event_attendees.csv")
     for _, row in event_attendees_df.iterrows():
         eid = row['event']
         for attr in ['yes', 'maybe', 'invited', 'no']:
@@ -67,7 +67,7 @@ def process_attendance():
             for uid in users:
                 update_attendance(uid, eid, attr, attendance_dict)
     # Process train.csv (which adds extra attendance info)
-    train_df = pd.read_csv("data/event-recommendation/train.csv", converters={"timestamp": parse})
+    train_df = pd.read_csv("data/event_recommendation/train.csv", converters={"timestamp": parse})
     for _, row in train_df.iterrows():
         uid = row['user']
         eid = row['event']
