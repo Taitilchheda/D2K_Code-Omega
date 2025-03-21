@@ -19,7 +19,7 @@ def process_users():
     return user_info
 
 def process_events():
-    events_df = pd.read_csv("data/event-recommendation/events_sampled_25.csv")
+    events_df = pd.read_csv("data/event-recommendation/events.csv")
     event_info = {}
     for _, row in events_df.iterrows():
         eid = row['event_id']

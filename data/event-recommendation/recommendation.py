@@ -11,16 +11,17 @@ import pickle
 import os
 from data_processing import process_users, process_events, process_friends, process_attendance, fill_missing_location, process_and_update_ages
 
+# --- Caching Functions ---
 def cache_data(filename, data):
     with open(filename, 'wb') as f:
         pickle.dump(data, f)
-    print(f"Data cached to {filename}")
+    print(f"[CACHE] Data cached to {filename}")  # Prints: Data has been saved to filename
 
 def load_cached_data(filename):
     if os.path.exists(filename):
         with open(filename, 'rb') as f:
             data = pickle.load(f)
-        print(f"Loaded cached data from {filename}")
+        print(f"[CACHE] Loaded cached data from {filename}")  # Prints: Data loaded from filename
         return data
     return None
 
@@ -33,7 +34,7 @@ def get_user_info():
     return user_info
 
 def get_event_info():
-    filename = 'cache_event_info.pkl'
+    filename = 'cache_event_info_complete.pkl'
     event_info = load_cached_data(filename)
     if event_info is None:
         event_info = process_events()
@@ -65,6 +66,7 @@ def get_full_data():
     event_info = get_event_info()
     friends = get_friends()
     attendance_by_uid, attendance_by_eid = get_attendance()
+    # If none of the users have a location, update missing locations and ages.
     if not any(user.get('location') for user in user_info.values()):
         fill_missing_location(user_info, event_info, attendance_by_uid, attendance_by_eid)
         process_and_update_ages(user_info)
@@ -72,9 +74,9 @@ def get_full_data():
     return user_info, event_info, attendance_by_uid, attendance_by_eid, friends
 
 user_info, event_info, attendance_by_uid, attendance_by_eid, friends = get_full_data()
-print("All data loaded successfully.")
+print("[INFO] All data loaded successfully.")  # Indicates data processing and caching completed
 
-
+# --- Helper Functions ---
 def memoize(function):
     memo = {}
     def wrapper(*args):
@@ -250,7 +252,7 @@ def process_events_for_user(uid, e_dict):
         ])
         features.extend(features2)
         
-        # Add location difference features (assuming both events and users may have a field "newloc2")
+        # Add location difference features (if newloc2 is available)
         features.extend(
             process_locations(
                 e.get('newloc2', []),
@@ -341,6 +343,7 @@ def write_submission(submission_name, user_events_dict):
     events = [' '.join([str(s) for s in user_events_dict[u]]) for u in users]
     submission = pd.DataFrame({"User": users, "Events": events})
     submission[["User", "Events"]].to_csv(submission_name, index=False)
+    print(f"[SUBMISSION] Saved submission to {submission_name}")  # Informs that the submission CSV is saved
 
 # --- Data splitting and evaluation functions ---
 
@@ -378,13 +381,15 @@ def get_crossval_data():
             events = train_dict[uid]
             e_dict = {e['eid']: (e['invited'], e['timestamp']) for e in events}
             features_dict = process_events_for_user(uid, e_dict)
+            # Print progress: percent of X built for this split
             if random.random() < 0.1:
-                print(len(X) * 100.0 / count)
+                progress = len(X) * 100.0 / count
+                print(f"[CROSSVAL] Processed features: {progress:.2f}% complete for split {i+1}")
             results[uid] = []
             for e in events:
                 eid = e['eid']
                 if eid not in features_dict:
-                    continue  # Skip the event if not processed
+                    continue  # Skip event if not processed
                 X.append(features_dict[eid])
                 Y1.append(e['interested'])
                 Y2.append(e['not_interested'])
@@ -418,9 +423,9 @@ def get_test_data():
     test_data = {}
     for uid, events in test_dict.items():
         e_dict = {e['eid']: (e['invited'], e['timestamp']) for e in events}
-        features_dict = process_events_for_user(uid, e_dict)
         count -= 1
-        print(count)
+        print(f"[TEST DATA] Processing test data for user {uid}; remaining users: {count}")
+        features_dict = process_events_for_user(uid, e_dict)
         X = []
         for e in events:
             eid = e['eid']
@@ -435,16 +440,13 @@ def get_final_data():
     final_dict = {}
     for _, row in final_df.iterrows():
         uid = int(row['User'])
-        # Remove trailing "L" characters from the string
+        # Remove trailing "L" characters and safely evaluate to a Python list
         events_str = row['Events'].replace("L", "")
-        # Safely evaluate the cleaned string to a Python list
         eid = ast.literal_eval(events_str)
         if uid in final_dict:
             raise Exception("Duplicate user in final data!")
         final_dict[uid] = eid
     return final_dict
-
-import numpy as np
 
 def run_model(m1, m2, test_data, is_final=True):
     final_dict = get_final_data()
@@ -454,20 +456,17 @@ def run_model(m1, m2, test_data, is_final=True):
             continue
 
         X = np.array(record['X'])
-        # Debug print the shape
-        print(f"User {uid}: X shape = {X.shape}")
+        print(f"[RUN MODEL] User {uid}: Feature matrix shape = {X.shape}")  # Prints the shape of X for each user
         
-        # If no event features exist for this user, skip them.
         if X.size == 0 or len(X.shape) < 2:
-            print(f"User {uid} has no event features; skipping.")
+            print(f"[RUN MODEL] User {uid} has no event features; skipping.")  # Warning for empty features
             continue
 
         events = record['events']
         Y1 = m1.test(X)  # Expecting one prediction per event
         
-        # Check if prediction count matches number of events
         if len(Y1) != len(events):
-            print(f"Warning: For uid {uid}, number of predictions ({len(Y1)}) does not match number of events ({len(events)}).")
+            print(f"[RUN MODEL] Warning: For user {uid}, number of predictions ({len(Y1)}) does not match number of events ({len(events)}).")
         
         sorted_events = []
         for i, e in enumerate(events):
@@ -476,8 +475,8 @@ def run_model(m1, m2, test_data, is_final=True):
         sorted_events.sort(key=lambda x: -x[1])
         sorted_events = [e[0] for e in sorted_events]
         results[uid] = sorted_events
+        print(f"[RUN MODEL] User {uid}: Final sorted event IDs: {results[uid]}")  # Print final recommendations per user
     return results
-
 
 def run_crossval():
     splits = get_crossval_data()
@@ -493,7 +492,7 @@ def run_crossval():
             z[idx] = False
         for idx in remove_features_lr:
             w[idx] = False
-        from model import Model  # make sure model.py is available
+        from model import Model  # ensure model.py is available
         m1 = Model(compress=z, has_none=w)
         m1.fit(s[0], s[1])
         X = other_s[0]
@@ -507,8 +506,9 @@ def run_crossval():
             l.sort(key=lambda x: -x[1])
             l = [e[0] for e in l]
             results_list.append(apk(other_s[3][uid], l))
-    print(sum(results_list) / len(results_list))
-
+    average_apk = sum(results_list) / len(results_list)
+    print(f"[CROSSVAL] Average APK score across splits: {average_apk:.4f}")
+    
 def get_test_solutions():
     solutions_df = pd.read_csv("data/event-recommendation/public_leaderboard_solution.csv")
     solutions_dict = {}
@@ -524,7 +524,9 @@ def evaluate_test_results(my_results):
     for uid, l in my_results.items():
         score = apk(solutions_dict[uid], l)
         scores.append(score)
-    return sum(scores) / len(scores)
+    average_score = sum(scores) / len(scores)
+    print(f"[EVALUATE] Average test score: {average_score:.4f}")
+    return average_score
 
 def run_full():
     splits = get_crossval_data()
@@ -548,11 +550,16 @@ def run_full():
     C = 0.03
     m1 = Model(compress=z, has_none=w, C=C)
     m1.fit(X, Y1)
+    # Save the trained model to a file
+    model_filename = "trained_model.pkl"
+    with open(model_filename, "wb") as f:
+        pickle.dump(m1, f)
+    print(f"[MODEL SAVE] Model saved to {model_filename}")
+    
     final = False
     results = run_model(m1, None, test_data, is_final=final)
     if not final:
-        print(evaluate_test_results(results))
-    # Optionally, write submission to CSV:
+        evaluate_test_results(results)
     write_submission('output.csv', results)
 
 # apk (average precision at k) is assumed to be defined in eval.py
