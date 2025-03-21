@@ -7,6 +7,7 @@ from pymongo import MongoClient
 from urllib.parse import quote_plus
 from dotenv import load_dotenv, find_dotenv
 from dateutil.parser import parse
+from utils import Utils
 
 # -------------------------------
 # MongoDB Connection Setup
@@ -91,6 +92,27 @@ def before_request():
 # -------------------------------
 @app.route('/register', methods=['POST'])
 def register():
+    """
+    Registers a new user.
+    
+    Expected JSON input:
+    {
+        "user_id": 1,                // Unique identifier for the user
+        "username": "user1",         // Optional, for login purposes
+        "password": "pass1",         // In production, ensure secure storage (hashing)
+        "birthyear": 1985,
+        "gender": "male",
+        "location": {                // Optional
+            "country": "USA",
+            "state": "CA",
+            "city": "San Francisco"
+        }
+    }
+    
+    Response:
+    - On success: { "status": "success", "user": <user document> }
+    - On failure: { "status": "fail", "message": "Error message" }
+    """
     data = request.get_json()
     required_fields = ["user_id", "birthyear", "gender"]
     for field in required_fields:
@@ -109,6 +131,23 @@ def register():
 # -------------------------------
 @app.route('/register_event', methods=['POST'])
 def register_event():
+    """
+    Registers a new event.
+    
+    Expected JSON input:
+    {
+        "event_id": "E123",     // Unique identifier for the event
+        "lat": 37.7749,
+        "lng": -122.4194,
+        "words": ["music", "festival", "live"],
+        "start": 1370000000     // (Optional) timestamp for event start time
+        // ... any additional event information
+    }
+    
+    Response:
+    - On success: { "status": "success", "event": <event document> }
+    - On failure: { "status": "fail", "message": "Error message" }
+    """
     data = request.get_json()
     if "event_id" not in data:
         return jsonify({"status": "fail", "message": "Missing event_id"}), 400
@@ -131,6 +170,19 @@ def register_event():
 # -------------------------------
 @app.route('/update_friends', methods=['POST'])
 def update_friends():
+    """
+    Updates a user's friend list.
+    
+    Expected JSON input:
+    {
+        "user": 1,              // user_id
+        "friends": [2, 3, 4]      // list of friend user_ids
+    }
+    
+    Response:
+    - On success: { "status": "success", "data": <updated document> }
+    - On failure: { "status": "fail", "message": "Error message" }
+    """
     data = request.get_json()
     if "user" not in data or "friends" not in data:
         return jsonify({"status": "fail", "message": "Missing user or friends field"}), 400
@@ -149,6 +201,23 @@ def update_friends():
 # -------------------------------
 @app.route('/interaction', methods=['POST'])
 def interaction():
+    """
+    Captures a user's interaction with an event.
+    
+    Expected JSON input:
+    {
+        "user": 1,
+        "event": "E123",
+        "response": "yes",   // Options can be: "yes", "maybe", "no", "invited"
+        "timestamp": 1370001234   // Unix timestamp of interaction
+    }
+    
+    The interaction is inserted into the attendance collection.
+    
+    Response:
+    - On success: { "status": "success", "interaction": <document> }
+    - On failure: { "status": "fail", "message": "Error message" }
+    """
     data = request.get_json()
     required = ["user", "event", "response", "timestamp"]
     for field in required:
@@ -170,6 +239,30 @@ def interaction():
 # -------------------------------
 @app.route('/recommendations', methods=['POST'])
 def recommendations():
+    """
+    Returns event recommendations for a given user using the pre-trained model.
+    
+    Expected JSON input:
+    {
+        "user_id": 1
+    }
+    
+    Process:
+    - Loads the full data from MongoDB (users, events, attendance, friends) and updates the global variables.
+    - Builds a candidate event dictionary for the user.
+      Here, for each event in the event_info collection, we assume a default tuple (invited_flag, timestamp)
+      for simplicity.
+    - Calls the existing recommendation logic (process_events_for_user) which computes feature vectors for each event.
+    - Replaces None values in the feature vector with 0.
+    - Uses the pre-trained model to predict scores for each event and sorts them in descending order.
+    
+    Response:
+    {
+        "status": "success",
+        "user_id": 1,
+        "recommendations": [list of event IDs sorted by predicted score]
+    }
+    """
     data = request.get_json()
     user_id = data.get("user_id")
     if user_id is None:
