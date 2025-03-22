@@ -6,10 +6,10 @@ import pandas as pd
 from dateutil.parser import parse
 import simplejson as json
 import ast
-from model import Model
+from models.model import Model
 import pickle
 import os
-from data_processing import process_users, process_events, process_friends, process_attendance, fill_missing_location, process_and_update_ages
+from models.data_processing import process_users, process_events, process_friends, process_attendance, fill_missing_location, process_and_update_ages
 
 # --- Caching Functions ---
 def cache_data(filename, data):
@@ -34,7 +34,7 @@ def get_user_info():
     return user_info
 
 def get_event_info():
-    filename = 'cache_event_info.pkl'
+    filename = 'cache_event_info_sampled.pkl'
     event_info = load_cached_data(filename)
     if event_info is None:
         event_info = process_events()
@@ -546,12 +546,11 @@ def run_full():
         z[idx] = False
     for idx in remove_features_lr:
         w[idx] = False
-    from model import Model  # ensure model.py is available
     C = 0.03
     m1 = Model(compress=z, has_none=w, C=C)
     m1.fit(X, Y1)
     # Save the trained model to a file
-    model_filename = "trained_model.pkl"
+    model_filename = "rf_model.pkl"
     with open(model_filename, "wb") as f:
         pickle.dump(m1, f)
     print(f"[MODEL SAVE] Model saved to {model_filename}")
@@ -563,7 +562,7 @@ def run_full():
     write_submission('output.csv', results)
 
 # apk (average precision at k) is assumed to be defined in eval.py
-from eval import apk
+from models.eval import apk
 
 if __name__ == "__main__":
     run_full()
