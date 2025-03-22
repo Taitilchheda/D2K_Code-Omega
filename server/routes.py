@@ -499,6 +499,7 @@ Recommendation Criteria (Prioritize in this order):
 2. Preference Matching: Strongly consider the user's preferences (categories, keywords, etc.) and recommend events that align with them.
 3. Past Interactions: Learn from the user's past interactions. Recommend events similar to those they liked, saved, or attended. Avoid recommending events similar to those they ignored.
 4. Social Influence (Friends Attending): Give a boost to events that friends are attending.
+5. If social influence and past interactions are unavailble, also include (explore) some random events.
 
 Please provide a JSON response with a list of recommended event IDs in the following format:
 {
