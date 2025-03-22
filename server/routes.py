@@ -56,32 +56,27 @@ class User(Base):
             "city": self.city,
             "genre": self.genre
         }
-
-
 class Event(Base):
     __tablename__ = "event_info"
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(String, unique=True, index=True)
-    lat = Column(Float)
-    lng = Column(Float)
-    words = Column(Text)  # stored as a JSON string
-    start = Column(Integer)  # event start timestamp
+    
+    # New fields:
+    event_name = Column(String)       # e.g., "Music Festival 2025"
+    description = Column(Text)        # Detailed description of the event
+    location = Column(String)         # Location as a string, e.g. "San Francisco"
+    start_date = Column(String)       # Start date (could use Date type if desired)
+    start_time = Column(String)       # Start time (could use Time type if desired)
 
     def to_dict(self):
-        data = {
+        return {
             "event_id": self.event_id,
-            "lat": self.lat,
-            "lng": self.lng,
-            "words": json.loads(self.words) if self.words else [],
-            "start": self.start,
+            "event_name": self.event_name,
+            "description": self.description,
+            "location": self.location,
+            "start_date": self.start_date,
+            "start_time": self.start_time
         }
-        # Add a location field similar to the original code
-        if self.lat is not None and self.lng is not None:
-            data["location"] = [self.lat, self.lng]
-        else:
-            data["location"] = None
-        return data
-
 class Attendance(Base):
     __tablename__ = "attendance"
     id = Column(Integer, primary_key=True, index=True)
@@ -250,30 +245,42 @@ def login():
 @app.route('/register_event', methods=['POST'])
 def register_event():
     """
-    Registers a new event.
+    Registers a new event using new fields.
 
-    Expected JSON input:
+    Expected form-data or JSON input:
     {
-        "lat": 37.7749,
-        "lng": -122.4194,
-        "words": ["music", "festival", "live"],
-        "start": 1370000000   // (Optional) timestamp for event start time
-        // ... any additional event information
+        "eventName": "Concert in the Park",
+        "description": "An open-air concert featuring local bands.",
+        "location": "San Francisco",
+        "startDate": "2025-06-15",      // Expected date format (e.g., YYYY-MM-DD)
+        "startTime": "18:00"            // Expected time format (e.g., HH:MM)
+        // Optionally, an event_id can be provided. Otherwise, one will be generated.
     }
     """
-    data = request.get_json()
+    # Support both JSON and form-data
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form.to_dict()
+
+    required_fields = ["eventName", "description", "location", "startDate", "startTime"]
+    for field in required_fields:
+        if field not in data or not data[field]:
+            return jsonify({"status": "fail", "message": f"Missing field: {field}"}), 400
+
     db = SessionLocal()
     try:
+        # Generate a unique event_id if not provided
         if "event_id" not in data or not data["event_id"]:
-            data["event_id"] = Utils.generate_random_event_id(db, Event)  # Ensure Utils generates a unique event_id
-
-        words_json = json.dumps(data.get("words", []))
+            data["event_id"] = Utils.generate_random_event_id(db, Event)
+        
         new_event = Event(
             event_id=data["event_id"],
-            lat=data.get("lat"),
-            lng=data.get("lng"),
-            words=words_json,
-            start=data.get("start")
+            event_name=data["eventName"],
+            description=data["description"],
+            location=data["location"],
+            start_date=data["startDate"],
+            start_time=data["startTime"]
         )
         db.add(new_event)
         db.commit()
@@ -376,104 +383,120 @@ def interaction():
     finally:
         db.close()
 
-# --------------------------------
-# Route: Recommendations
-# --------------------------------
-# @app.route('/recommendations', methods=['POST'])
-# def recommendations():
-#     data = request.get_json()
-#     username = data.get("user_id")
-#     if username is None:
-#         return jsonify({"status": "fail", "message": "Missing user_id"}), 400
 
-#     # Retrieve user_info and event_info from the session; reload if missing.
-#     user_info = flask_session.get("user_info")
-#     event_info = flask_session.get("event_info")
-#     if not user_info or username not in user_info:
-#         db = SessionLocal()
-#         try:
-#             user_info, event_info, att_by_username, att_by_event, friends_dict = load_full_data_sql(db)
-#             flask_session["user_info"] = user_info
-#             flask_session["event_info"] = event_info
-#         finally:
-#             db.close()
-
-#     if username not in flask_session["user_info"]:
-#         return jsonify({"status": "fail", "message": "User not found"}), 404
-
-#     # Convert the username-based user_info to the expected numeric ID:
-#     user_obj = flask_session["user_info"][username]
-#     uid = user_obj["id"]
-
-#     # Ensure each event has an "id" field; use event_id as its "id"
-#     for eid, event in event_info.items():
-#         if "id" not in event:
-#             event["id"] = eid  # or event["event_id"] if they differ
-
-#     # Build candidate event dictionary with default values
-#     e_dict = {eid: (0, 0) for eid in event_info}
-
-#     # Compute features for recommendation using the numeric uid
-#     features_dict = process_events_for_user(uid, e_dict)
-#     event_ids = list(features_dict.keys())
-#     X = []
-#     for eid in event_ids:
-#         # Replace None values with 0 for every feature
-#         features = [0 if f is None else f for f in features_dict[eid]]
-#         X.append(features)
-#     X = np.array(X)
-#     X = np.atleast_2d(X)  # Ensure X is 2D
-
-#     if ml_model is None:
-#         return jsonify({"status": "fail", "message": "Model not loaded"}), 500
-
-#     predictions = ml_model.test(X)
-#     event_scores = list(zip(event_ids, predictions))
-#     event_scores.sort(key=lambda x: -x[1])
-#     recommended_events = [eid for eid, score in event_scores]
-
-#     return jsonify({
-#         "status": "success",
-#         "user_id": username,
-#         "recommendations": recommended_events
-#     }), 200
 
 @app.route('/recommendations-new', methods=['POST'])
 def recommendations_new():
+    """
+    Generates event recommendations for a user by gathering the following information:
+    
+    - User Demographics: (birthyear, gender, location from city/state/country, preferred genre)
+    - User Past Interactions: events the user responded to (yes, no, interested, etc.)
+    - Event Information: event id, event name, description, location, start date, and start time
+    - Friends Attending: for each event, which of the user's friends are attending
+    - Recommendation Criteria:
+        1. Location Proximity
+        2. Preference Matching
+        3. Past Interactions
+        4. Social Influence (Friends Attending)
+        
+    The LLM is expected to return a JSON response with a list of recommended event IDs.
+    
+    Expected JSON input:
+    {
+      "user_id": "<username>"
+    }
+    """
+    # Get user_id from JSON payload
     data = request.get_json()
     username = data.get("user_id")
-    if username is None:
+    if not username:
         return jsonify({"status": "fail", "message": "Missing user_id"}), 400
 
-    # Retrieve user_info and event_info from the session; reload if missing.
+    # Retrieve session data; reload from the database if missing.
     user_info = flask_session.get("user_info")
     event_info = flask_session.get("event_info")
+    attendance_by_username = flask_session.get("attendance_by_username")
+    attendance_by_event = flask_session.get("attendance_by_event")
+    friends = flask_session.get("friends")
+
     if not user_info or username not in user_info:
         db = SessionLocal()
         try:
-            user_info, event_info, att_by_username, att_by_event, friends_dict = load_full_data_sql(db)
+            user_info, event_info, attendance_by_username, attendance_by_event, friends = load_full_data_sql(db)
             flask_session["user_info"] = user_info
             flask_session["event_info"] = event_info
+            flask_session["attendance_by_username"] = attendance_by_username
+            flask_session["attendance_by_event"] = attendance_by_event
+            flask_session["friends"] = friends
         finally:
             db.close()
 
-    if username not in flask_session["user_info"]:
+    if username not in user_info:
         return jsonify({"status": "fail", "message": "User not found"}), 404
 
-    # Convert the username-based user_info to the expected numeric ID:
-    user_obj = flask_session["user_info"][username]
-    uid = user_obj["id"]
+    # Extract user demographics from user_info.
+    user_demographics = user_info[username]  # Contains birthyear, gender, country, state, city, genre
 
-    # Ensure each event has an "id" field; use event_id as its "id"
-    for eid, event in event_info.items():
-        if "id" not in event:
-            event["id"] = eid  # or event["event_id"] if they differ
+    # Get user's past event interactions.
+    user_interactions = attendance_by_username.get(username, [])
 
-    # Build candidate event dictionary with default values
-    e_dict = {eid: (0, 0) for eid in event_info}
+    # Get user's friend list.
+    user_friends = friends.get(username, [])
 
-    
-    prompt = """"""
+    # For each event, check which of the user's friends are attending.
+    friend_attendance = {}
+    for event_id, attend_list in attendance_by_event.items():
+        friend_users = [record["user"] for record in attend_list if record["user"] in user_friends]
+        if friend_users:
+            friend_attendance[event_id] = friend_users
+
+    # Compose the prompt for the LLM.
+    prompt = f"""
+You are an expert event recommendation agent for an events discovery platform. Your goal is to recommend the most relevant events to a user given the following information.
+
+User Demographics:
+  - Username: {username}
+  - Birthyear: {user_demographics.get('birthyear')}
+  - Gender: {user_demographics.get('gender')}
+  - Location: {user_demographics.get('city')}, {user_demographics.get('state')}, {user_demographics.get('country')}
+  - Preferred Genre: {user_demographics.get('genre')}
+
+User Past Interactions (Event responses):
+{json.dumps(user_interactions, indent=2)}
+
+Event Information:
+"""
+    # Append details for each event.
+    for event_id, event in event_info.items():
+        prompt += f"""
+Event ID: {event_id}
+  - Name: {event.get('event_name')}
+  - Description: {event.get('description')}
+  - Location: {event.get('location')}
+  - Start Date: {event.get('start_date')}
+  - Start Time: {event.get('start_time')}
+"""
+        if event_id in friend_attendance:
+            prompt += f"  - Friends Attending: {', '.join(friend_attendance[event_id])}\n"
+        else:
+            prompt += "  - Friends Attending: None\n"
+
+    prompt += """
+Recommendation Criteria (Prioritize in this order):
+1. Location Proximity: Prioritize events that are geographically closer to the user.
+2. Preference Matching: Strongly consider the user's preferences (categories, keywords, etc.) and recommend events that align with them.
+3. Past Interactions: Learn from the user's past interactions. Recommend events similar to those they liked, saved, or attended. Avoid recommending events similar to those they ignored.
+4. Social Influence (Friends Attending): Give a boost to events that friends are attending.
+
+Please provide a JSON response with a list of recommended event IDs in the following format:
+{
+  "events": ["recommended_event_id1", "recommended_event_id2", "recommended_event_id3"]
+}
+"""
+
+    # Call the Gemini provider with the composed prompt.
+    print("PROMPT", prompt)
     recommended_events = gemini_provider.generate_json_response(prompt)
 
     return jsonify({
