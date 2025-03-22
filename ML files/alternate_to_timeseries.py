@@ -4,6 +4,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import train_test_split, GridSearchCV
 import matplotlib.pyplot as plt
+import pickle
 
 ticket_sales_data = pd.read_csv('ticket_sales_data_large.csv', parse_dates=['date'], index_col='date')
 
@@ -64,6 +65,7 @@ y_pred = best_model.predict(X_test)
 mae = mean_absolute_error(y_test, y_pred)
 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
 
+
 print(f"Mean Absolute Error: {mae}")
 print(f"Root Mean Squared Error: {rmse}")
 
@@ -75,3 +77,10 @@ plt.title('Event Ticket Sales Forecasting with Random Forest Regressor')
 plt.xlabel('Date')
 plt.ylabel('Sales')
 plt.show()
+
+def save_model(model, filename):
+    with open(filename, 'wb') as file:
+        pickle.dump(model, file)
+    print(f"Model saved to {filename}")
+
+save_model(best_model, 'ticket_sales_random_forest_model.pkl')
