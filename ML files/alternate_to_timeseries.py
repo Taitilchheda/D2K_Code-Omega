@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 import matplotlib.pyplot as plt
 import pickle
 
-ticket_sales_data = pd.read_csv('ticket_sales_data_large.csv', parse_dates=['date'], index_col='date')
+ticket_sales_data = pd.read_csv('ticket_sales_prediction_data.csv', parse_dates=['date'], index_col='date')
 
 ticket_sales_data['day_of_week'] = ticket_sales_data.index.dayofweek 
 ticket_sales_data['month'] = ticket_sales_data.index.month
@@ -83,4 +83,4 @@ def save_model(model, filename):
         pickle.dump(model, file)
     print(f"Model saved to {filename}")
 
-save_model(best_model, 'ticket_sales_random_forest_model.pkl')
+save_model(best_model, 'ticket_sales_random_forest_model_data.pkl')

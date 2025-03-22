@@ -550,7 +550,7 @@ def run_full():
     m1 = Model(compress=z, has_none=w, C=C)
     m1.fit(X, Y1)
     # Save the trained model to a file
-    model_filename = "rf_model.pkl"
+    model_filename = "rf_model_25.pkl"
     with open(model_filename, "wb") as f:
         pickle.dump(m1, f)
     print(f"[MODEL SAVE] Model saved to {model_filename}")
