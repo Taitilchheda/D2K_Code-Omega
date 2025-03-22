@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Recommendation from "./pages/Recommendation"
 import HomePage from "./pages/Home";
 import EventDetailPage from "./pages/EventDetails";
-import test from "./pages/test";
+import Graph from "./pages/test";
 import Dashboard from "./pages/Dashboad";
 import { UserLogin } from "./pages/Login";
 
@@ -19,7 +19,7 @@ function App() {
           <Route path="/home" element={<HomePage />} />
           <Route path="/event/:id" element={<EventDetailPage />} />
           <Route path="/movie/:id" element={<EventDetailPage />} />
-          <Route path="/test" element={<test/>} />
+          <Route path="/test" element={<Graph/>} />
           <Route path="/Dashboard" element={<Dashboard/>} />
           <Route path="/login" element={<UserLogin/>} />
           {/* </Route> */}
