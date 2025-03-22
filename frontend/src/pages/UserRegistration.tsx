@@ -1,6 +1,7 @@
-
 // components/UserRegistration.tsx
 import React, { useState } from 'react';
+import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 interface UserFormData {
   username: string;
@@ -10,6 +11,7 @@ interface UserFormData {
   country: string;
   state: string;
   city: string;
+  genre: string;
 }
 
 export const UserRegistration: React.FC = () => {
@@ -20,13 +22,16 @@ export const UserRegistration: React.FC = () => {
     gender: '',
     country: '',
     state: '',
-    city: ''
+    city: '',
+    genre: ''
   });
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const navigate = useNavigate();
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -50,20 +55,18 @@ export const UserRegistration: React.FC = () => {
           country: formData.country,
           state: formData.state,
           city: formData.city
-        }
+        },
+        genre: formData.genre
       };
 
-      const response = await fetch('/register', {
-        method: 'POST',
+      const response = await axios.post('/api/register', userData, {
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
+        }
       });
 
-      const result = await response.json();
-      
-      if (response.ok) {
+      // axios wraps the response inside the data property
+      if (response.status === 200) {
         setMessage({ text: 'Registration successful!', type: 'success' });
         // Reset form after successful registration
         setFormData({
@@ -73,13 +76,28 @@ export const UserRegistration: React.FC = () => {
           gender: '',
           country: '',
           state: '',
-          city: ''
+          city: '',
+          genre: ''
+        });
+        navigate("/login")
+      } else {
+        setMessage({
+          text: response.data?.message || 'Registration failed',
+          type: 'error'
+        });
+      }
+    } catch (error: any) {
+      if (error.response) {
+        setMessage({
+          text: error.response.data?.message || 'Registration failed',
+          type: 'error'
         });
       } else {
-        setMessage({ text: result.message || 'Registration failed', type: 'error' });
+        setMessage({
+          text: 'An error occurred. Please try again.',
+          type: 'error'
+        });
       }
-    } catch (error) {
-      setMessage({ text: 'An error occurred. Please try again.', type: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -88,17 +106,25 @@ export const UserRegistration: React.FC = () => {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-6 text-center">User Registration</h2>
-      
+
       {message.text && (
-        <div className={`p-4 mb-4 rounded ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <div
+          className={`p-4 mb-4 rounded ${
+            message.type === 'success'
+              ? 'bg-green-100 text-green-800'
+              : 'bg-red-100 text-red-800'
+          }`}
+        >
           {message.text}
         </div>
       )}
-      
+
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Username
+            </label>
             <input
               type="text"
               name="username"
@@ -108,9 +134,11 @@ export const UserRegistration: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
             />
           </div>
-          
+
           <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Password
+            </label>
             <input
               type="password"
               name="password"
@@ -120,9 +148,11 @@ export const UserRegistration: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
             />
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Birth Year</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Birth Year
+            </label>
             <input
               type="number"
               name="birthyear"
@@ -134,9 +164,11 @@ export const UserRegistration: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
             />
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Gender
+            </label>
             <select
               name="gender"
               value={formData.gender}
@@ -151,9 +183,11 @@ export const UserRegistration: React.FC = () => {
               <option value="prefer-not-to-say">Prefer not to say</option>
             </select>
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Country
+            </label>
             <input
               type="text"
               name="country"
@@ -162,9 +196,11 @@ export const UserRegistration: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
             />
           </div>
-          
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">State/Province</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              State/Province
+            </label>
             <input
               type="text"
               name="state"
@@ -173,9 +209,11 @@ export const UserRegistration: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
             />
           </div>
-          
+
           <div className="col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              City
+            </label>
             <input
               type="text"
               name="city"
@@ -184,8 +222,22 @@ export const UserRegistration: React.FC = () => {
               className="w-full p-2 border border-gray-300 rounded-md"
             />
           </div>
+
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Genre
+            </label>
+            <input
+              type="text"
+              name="genre"
+              value={formData.genre}
+              onChange={handleChange}
+              placeholder="Sports, Music, Festival, Adventure, Fitness, Concert"
+              className="w-full p-2 border border-gray-300 rounded-md"
+            />
+          </div>
         </div>
-        
+
         <button
           type="submit"
           disabled={isSubmitting}
