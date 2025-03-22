@@ -6,13 +6,14 @@ import string
 import pickle
 import numpy as np
 import json
+from api.gemini_client import GeminiProvider
 from urllib.parse import quote_plus
 from dotenv import load_dotenv, find_dotenv
 from dateutil.parser import parse
 
 # Import your model and recommendation modules as needed
 from models.model import Model
-from models.recommendation import process_events_for_user
+# from models.recommendation import process_events_for_user
 from server.utils import Utils
 
 from sqlalchemy import create_engine, Column, String, Integer, Float, Text
@@ -24,6 +25,7 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 # --------------------------------
 load_dotenv(find_dotenv())
 DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///example.db")
+gemini_provider = GeminiProvider()
 engine = create_engine(DATABASE_URI, echo=True)
 SessionLocal = scoped_session(sessionmaker(autocommit=False, autoflush=False, bind=engine))
 Base = declarative_base()
@@ -35,16 +37,26 @@ class User(Base):
     __tablename__ = "user_info"
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String, unique=True, index=True)
+    password = Column(String)  # New field: storing password (consider hashing in production)
     birthyear = Column(Integer)
     gender = Column(String)
-    
+    country = Column(String)  # New field: country
+    state = Column(String)    # New field: state
+    city = Column(String)     # New field: city
+    genre = Column(String)    # New field: genre preferences
+
     def to_dict(self):
         return {
             "id": self.id,
             "username": self.username,
             "birthyear": self.birthyear,
-            "gender": self.gender
+            "gender": self.gender,
+            "country": self.country,
+            "state": self.state,
+            "city": self.city,
+            "genre": self.genre
         }
+
 
 class Event(Base):
     __tablename__ = "event_info"
@@ -152,28 +164,33 @@ Session(app)
 # --------------------------------
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    required_fields = ["username", "birthyear", "gender"]
+    required_fields = ["username", "password", "birthyear", "gender", "country", "state", "city", "genre"]
+    data = {}
     for field in required_fields:
-        if field not in data:
+        value = request.form.get(field)
+        if not value:
             return jsonify({"status": "fail", "message": f"Missing field: {field}"}), 400
+        data[field] = value
 
     db = SessionLocal()
     try:
-        # Check if the username already exists
         if db.query(User).filter_by(username=data["username"]).first():
             return jsonify({"status": "fail", "message": "Username already exists"}), 400
 
         new_user = User(
             username=data["username"],
-            birthyear=data.get("birthyear"),
-            gender=data.get("gender")
+            password=data["password"],
+            birthyear=int(data.get("birthyear")),
+            gender=data.get("gender"),
+            country=data.get("country"),
+            state=data.get("state"),
+            city=data.get("city"),
+            genre=data.get("genre")
         )
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
 
-        # Load the full user info into the Flask session
         users, events, att_by_username, att_by_event, friends_dict = load_full_data_sql(db)
         flask_session["user_info"] = users
         flask_session["event_info"] = events
@@ -187,6 +204,45 @@ def register():
         return jsonify({"status": "fail", "message": str(e)}), 500
     finally:
         db.close()
+
+@app.route('/login', methods=['POST'])
+def login():
+    """
+    Login a user by validating username and password.
+
+    Expected form input:
+    {
+        "username": "john_doe",
+        "password": "pass123"
+    }
+    """
+    data = request.form  # If sent as form-data, use .form; if JSON, use .get_json()
+
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"status": "fail", "message": "Missing username or password"}), 400
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(username=username).first()
+        if user is None:
+            return jsonify({"status": "fail", "message": "User not found"}), 404
+
+        if user.password != password:
+            return jsonify({"status": "fail", "message": "Incorrect password"}), 401
+
+        # Success! Populate session
+        flask_session["user"] = user.to_dict()
+        
+        return jsonify({"status": "success", "message": "Logged in successfully", "user": user.to_dict()}), 200
+
+    except Exception as e:
+        return jsonify({"status": "fail", "message": str(e)}), 500
+    finally:
+        db.close()
+
 
 # --------------------------------
 # Route: Register Event
@@ -323,8 +379,67 @@ def interaction():
 # --------------------------------
 # Route: Recommendations
 # --------------------------------
-@app.route('/recommendations', methods=['POST'])
-def recommendations():
+# @app.route('/recommendations', methods=['POST'])
+# def recommendations():
+#     data = request.get_json()
+#     username = data.get("user_id")
+#     if username is None:
+#         return jsonify({"status": "fail", "message": "Missing user_id"}), 400
+
+#     # Retrieve user_info and event_info from the session; reload if missing.
+#     user_info = flask_session.get("user_info")
+#     event_info = flask_session.get("event_info")
+#     if not user_info or username not in user_info:
+#         db = SessionLocal()
+#         try:
+#             user_info, event_info, att_by_username, att_by_event, friends_dict = load_full_data_sql(db)
+#             flask_session["user_info"] = user_info
+#             flask_session["event_info"] = event_info
+#         finally:
+#             db.close()
+
+#     if username not in flask_session["user_info"]:
+#         return jsonify({"status": "fail", "message": "User not found"}), 404
+
+#     # Convert the username-based user_info to the expected numeric ID:
+#     user_obj = flask_session["user_info"][username]
+#     uid = user_obj["id"]
+
+#     # Ensure each event has an "id" field; use event_id as its "id"
+#     for eid, event in event_info.items():
+#         if "id" not in event:
+#             event["id"] = eid  # or event["event_id"] if they differ
+
+#     # Build candidate event dictionary with default values
+#     e_dict = {eid: (0, 0) for eid in event_info}
+
+#     # Compute features for recommendation using the numeric uid
+#     features_dict = process_events_for_user(uid, e_dict)
+#     event_ids = list(features_dict.keys())
+#     X = []
+#     for eid in event_ids:
+#         # Replace None values with 0 for every feature
+#         features = [0 if f is None else f for f in features_dict[eid]]
+#         X.append(features)
+#     X = np.array(X)
+#     X = np.atleast_2d(X)  # Ensure X is 2D
+
+#     if ml_model is None:
+#         return jsonify({"status": "fail", "message": "Model not loaded"}), 500
+
+#     predictions = ml_model.test(X)
+#     event_scores = list(zip(event_ids, predictions))
+#     event_scores.sort(key=lambda x: -x[1])
+#     recommended_events = [eid for eid, score in event_scores]
+
+#     return jsonify({
+#         "status": "success",
+#         "user_id": username,
+#         "recommendations": recommended_events
+#     }), 200
+
+@app.route('/recommendations-new', methods=['POST'])
+def recommendations_new():
     data = request.get_json()
     username = data.get("user_id")
     if username is None:
@@ -357,24 +472,9 @@ def recommendations():
     # Build candidate event dictionary with default values
     e_dict = {eid: (0, 0) for eid in event_info}
 
-    # Compute features for recommendation using the numeric uid
-    features_dict = process_events_for_user(uid, e_dict)
-    event_ids = list(features_dict.keys())
-    X = []
-    for eid in event_ids:
-        # Replace None values with 0 for every feature
-        features = [0 if f is None else f for f in features_dict[eid]]
-        X.append(features)
-    X = np.array(X)
-    X = np.atleast_2d(X)  # Ensure X is 2D
-
-    if ml_model is None:
-        return jsonify({"status": "fail", "message": "Model not loaded"}), 500
-
-    predictions = ml_model.test(X)
-    event_scores = list(zip(event_ids, predictions))
-    event_scores.sort(key=lambda x: -x[1])
-    recommended_events = [eid for eid, score in event_scores]
+    
+    prompt = """"""
+    recommended_events = gemini_provider.generate_json_response(prompt)
 
     return jsonify({
         "status": "success",
