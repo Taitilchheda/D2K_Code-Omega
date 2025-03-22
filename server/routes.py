@@ -60,13 +60,18 @@ class Event(Base):
     __tablename__ = "event_info"
     id = Column(Integer, primary_key=True, index=True)
     event_id = Column(String, unique=True, index=True)
-    
-    # New fields:
-    event_name = Column(String)       # e.g., "Music Festival 2025"
-    description = Column(Text)        # Detailed description of the event
-    location = Column(String)         # Location as a string, e.g. "San Francisco"
-    start_date = Column(String)       # Start date (could use Date type if desired)
-    start_time = Column(String)       # Start time (could use Time type if desired)
+
+    # Updated fields:
+    event_name = Column(String, nullable=False)      # e.g., "Music Festival 2025"
+    description = Column(Text, nullable=False)       # Detailed description of the event
+    location = Column(String, nullable=False)        # e.g., "San Francisco"
+    start_date = Column(String, nullable=False)      # Could also be Date
+    start_time = Column(String, nullable=False)      # Could also be Time
+    venue = Column(String, nullable=False)           # e.g., "DJ SANGHVI"
+    price = Column(Float, nullable=False)            # Ticket price
+    age_restriction = Column(Integer, nullable=False)# e.g., 18+
+    languages = Column(String, nullable=False)       # e.g., "English"
+    category = Column(String, nullable=False)        # e.g., "Music"
 
     def to_dict(self):
         return {
@@ -75,8 +80,14 @@ class Event(Base):
             "description": self.description,
             "location": self.location,
             "start_date": self.start_date,
-            "start_time": self.start_time
+            "start_time": self.start_time,
+            "venue": self.venue,
+            "price": self.price,
+            "age_restriction": self.age_restriction,
+            "languages": self.languages,
+            "category": self.category
         }
+
 class Attendance(Base):
     __tablename__ = "attendance"
     id = Column(Integer, primary_key=True, index=True)
@@ -245,32 +256,34 @@ def login():
 @app.route('/register_event', methods=['POST'])
 def register_event():
     """
-    Registers a new event using new fields.
+    Registers a new event with extended fields.
 
     Expected form-data or JSON input:
     {
-        "eventName": "Concert in the Park",
-        "description": "An open-air concert featuring local bands.",
-        "location": "San Francisco",
-        "startDate": "2025-06-15",      // Expected date format (e.g., YYYY-MM-DD)
-        "startTime": "18:00"            // Expected time format (e.g., HH:MM)
-        // Optionally, an event_id can be provided. Otherwise, one will be generated.
+        "eventName": "Data 2 Knowledge 3.0",
+        "description": "9 hours AI/ML hackathon",
+        "location": "Mumbai",
+        "startDate": "2025-06-15",
+        "startTime": "18:00",
+        "venue": "DJ SANGHVI",
+        "price": "1000",
+        "ageRestriction": "18",
+        "languages": "English",
+        "category": "Music"
     }
     """
-    # Support both JSON and form-data
     if request.is_json:
         data = request.get_json()
     else:
         data = request.form.to_dict()
 
-    required_fields = ["eventName", "description", "location", "startDate", "startTime"]
+    required_fields = ["eventName", "description", "location", "startDate", "startTime", "venue", "price", "ageRestriction", "languages", "category"]
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({"status": "fail", "message": f"Missing field: {field}"}), 400
 
     db = SessionLocal()
     try:
-        # Generate a unique event_id if not provided
         if "event_id" not in data or not data["event_id"]:
             data["event_id"] = Utils.generate_random_event_id(db, Event)
         
@@ -280,13 +293,18 @@ def register_event():
             description=data["description"],
             location=data["location"],
             start_date=data["startDate"],
-            start_time=data["startTime"]
+            start_time=data["startTime"],
+            venue=data["venue"],
+            price=float(data["price"]),
+            age_restriction=int(data["ageRestriction"]),
+            languages=data["languages"],
+            category=data["category"]
         )
+
         db.add(new_event)
         db.commit()
         db.refresh(new_event)
 
-        # Update session data with the new event
         users, events, att_by_username, att_by_event, friends_dict = load_full_data_sql(db)
         flask_session["event_info"] = events
 
@@ -384,23 +402,12 @@ def interaction():
         db.close()
 
 
-
 @app.route('/recommendations-new', methods=['POST'])
 def recommendations_new():
     """
-    Generates event recommendations for a user by gathering the following information:
-    
-    - User Demographics: (birthyear, gender, location from city/state/country, preferred genre)
-    - User Past Interactions: events the user responded to (yes, no, interested, etc.)
-    - Event Information: event id, event name, description, location, start date, and start time
-    - Friends Attending: for each event, which of the user's friends are attending
-    - Recommendation Criteria:
-        1. Location Proximity
-        2. Preference Matching
-        3. Past Interactions
-        4. Social Influence (Friends Attending)
-        
-    The LLM is expected to return a JSON response with a list of recommended event IDs.
+    Generates event recommendations by gathering relevant data for the user and events,
+    then composing a prompt for an LLM. If the user has no past interactions or friends,
+    those sections are omitted.
     
     Expected JSON input:
     {
@@ -438,18 +445,22 @@ def recommendations_new():
     # Extract user demographics from user_info.
     user_demographics = user_info[username]  # Contains birthyear, gender, country, state, city, genre
 
-    # Get user's past event interactions.
+    # Get user's past event interactions, if any.
     user_interactions = attendance_by_username.get(username, [])
-
-    # Get user's friend list.
+    interactions_str = ""
+    if user_interactions:
+        interactions_str = json.dumps(user_interactions, indent=2)
+    
+    # Get user's friend list, if any.
     user_friends = friends.get(username, [])
 
     # For each event, check which of the user's friends are attending.
     friend_attendance = {}
-    for event_id, attend_list in attendance_by_event.items():
-        friend_users = [record["user"] for record in attend_list if record["user"] in user_friends]
-        if friend_users:
-            friend_attendance[event_id] = friend_users
+    if user_friends:
+        for event_id, attend_list in attendance_by_event.items():
+            friend_users = [record["user"] for record in attend_list if record["user"] in user_friends]
+            if friend_users:
+                friend_attendance[event_id] = friend_users
 
     # Compose the prompt for the LLM.
     prompt = f"""
@@ -461,12 +472,12 @@ User Demographics:
   - Gender: {user_demographics.get('gender')}
   - Location: {user_demographics.get('city')}, {user_demographics.get('state')}, {user_demographics.get('country')}
   - Preferred Genre: {user_demographics.get('genre')}
-
-User Past Interactions (Event responses):
-{json.dumps(user_interactions, indent=2)}
-
-Event Information:
 """
+
+    if interactions_str:
+        prompt += f"\nUser Past Interactions (Event responses):\n{interactions_str}\n"
+    
+    prompt += "\nEvent Information:\n"
     # Append details for each event.
     for event_id, event in event_info.items():
         prompt += f"""
@@ -477,7 +488,7 @@ Event ID: {event_id}
   - Start Date: {event.get('start_date')}
   - Start Time: {event.get('start_time')}
 """
-        if event_id in friend_attendance:
+        if user_friends and event_id in friend_attendance:
             prompt += f"  - Friends Attending: {', '.join(friend_attendance[event_id])}\n"
         else:
             prompt += "  - Friends Attending: None\n"
@@ -496,8 +507,8 @@ Please provide a JSON response with a list of recommended event IDs in the follo
 """
 
     # Call the Gemini provider with the composed prompt.
-    print("PROMPT", prompt)
     recommended_events = gemini_provider.generate_json_response(prompt)
+    print("prompt", prompt)
 
     return jsonify({
         "status": "success",
